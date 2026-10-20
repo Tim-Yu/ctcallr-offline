@@ -1,0 +1,2 @@
+Raw base URL: https://github.com/Tim-Yu/ctcallr-offline-parts/raw/refs/heads/payload-v1.0/packages/ctcallr/v1.0
+Restore: wget https://github.com/Tim-Yu/ctcallr-offline/raw/refs/heads/main/restore/download_and_restore.sh && bash download_and_restore.sh --dest /path/ctcallr

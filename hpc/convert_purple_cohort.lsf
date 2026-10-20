@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+#BSUB -q short
+#BSUB -P re_gecip_cancer_sarcoma
+#BSUB -J ctcallr_convert
+#BSUB -o logs/ctcallr_convert.%J.out
+#BSUB -e logs/ctcallr_convert.%J.err
+#BSUB -n 1
+#BSUB -R "rusage[mem=4000]"
+#BSUB -W 1:00
+#
+# Build the two CTCallR input tables from oncoanalyser/PURPLE output for a list of samples.
+# SAMPLES_TSV: tab-separated "sample  purple_dir" (purple_dir holds <sample>.purple.cnv.somatic.tsv and <sample>.purple.sv.vcf.gz)
+#   bsub -env "all,SAMPLES_TSV=hpc/purple_samples.tsv,OUT_PREFIX=inputs/cohort" < hpc/convert_purple_cohort.lsf
+set -euo pipefail
+module load singularity/4.1.1
+CTCALLR_ROOT="${CTCALLR_ROOT:-$(pwd)}"
+# shellcheck disable=SC1091
+source "$CTCALLR_ROOT/env_controlled.sh"
+: "${SAMPLES_TSV:?set SAMPLES_TSV}"; OUT_PREFIX="${OUT_PREFIX:-inputs/cohort}"
+mkdir -p "$(dirname "$OUT_PREFIX")" logs; rm -f "${OUT_PREFIX}_allCNAs.txt" "${OUT_PREFIX}_allSVs.txt"
+while IFS=$'\t' read -r sample pdir; do
+  [[ -z "$sample" || "$sample" == \#* ]] && continue
+  ctcallr_exec.sh --bind "$pdir:/purple:ro" --bind "$(realpath "$(dirname "$OUT_PREFIX")"):/outp" -- Rscript /ctcallr_bin/purple_to_ctcallr.R \
+    --sample "$sample" --purple-cnv "/purple/$sample.purple.cnv.somatic.tsv" --purple-sv "/purple/$sample.purple.sv.vcf.gz" \
+    --out-cna "/outp/$(basename "$OUT_PREFIX")_allCNAs.txt" --out-sv "/outp/$(basename "$OUT_PREFIX")_allSVs.txt" --append
+done < "$SAMPLES_TSV"
+echo "[$(date)] wrote ${OUT_PREFIX}_allCNAs.txt and ${OUT_PREFIX}_allSVs.txt"

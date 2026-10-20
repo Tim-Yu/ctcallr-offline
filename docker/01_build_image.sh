@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# Build the CTCallR Docker image, convert to SIF, record provenance.
+set -euo pipefail
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+UP="${UP:-$ROOT/../upstream_CTCallR}"
+COMMIT="$(git -C "$UP" rev-parse HEAD)"; SHORT="${COMMIT:0:7}"
+TAG="ctcallr:1.0-${SHORT}"
+SIF="$ROOT/sif/ctcallr_1.0-${SHORT}.sif"
+export SINGULARITY_TMPDIR="${SINGULARITY_TMPDIR:-/mnt/scratch/BYU/tmp/singularity_tmp}" SINGULARITY_CACHEDIR="${SINGULARITY_CACHEDIR:-/mnt/scratch/BYU/tmp/singularity_cache}"
+mkdir -p "$SINGULARITY_TMPDIR" "$SINGULARITY_CACHEDIR" "$ROOT/sif" "$ROOT/docker/context"
+echo "[$(date -u +%FT%TZ)] staging context (CTCallR @ $COMMIT)"
+rsync -a --delete --exclude .git "$UP/CTCallR/" "$ROOT/docker/context/CTCallR/"
+cp -f "$ROOT/downloads/copynumber_1.40.0_bioc-RELEASE_3_17.tar.gz" "$ROOT/docker/context/"
+echo "[$(date -u +%FT%TZ)] docker build $TAG"
+docker build --build-arg CTCALLR_COMMIT="$COMMIT" -t "$TAG" "$ROOT/docker" 2>&1 | tee "$ROOT/sif/docker_build_${SHORT}.log" | grep -E "^#[0-9]+ (\[|DONE|ERROR)|AUDIT|MISSING|Error|error:" | tail -n 40
+docker image inspect "$TAG" --format 'image id {{.Id}}  size {{.Size}} B  created {{.Created}}' | tee "$ROOT/sif/ctcallr_1.0-${SHORT}.docker_id.txt"
+echo "[$(date -u +%FT%TZ)] singularity build $SIF (via docker save -> docker-archive; this Singularity cannot talk to the Docker 29 daemon)"
+rm -f "$SIF"
+ARCHIVE="$SINGULARITY_TMPDIR/ctcallr_${SHORT}.docker.tar"
+docker save -o "$ARCHIVE" "$TAG"
+singularity build "$SIF" "docker-archive://$ARCHIVE"
+rm -f "$ARCHIVE"
+sha256sum "$SIF" | tee "$SIF.sha256"
+echo "[$(date -u +%FT%TZ)] versions inside the SIF:"
+singularity exec --cleanenv --no-home "$SIF" Rscript /opt/ctcallr/audit_deps.R | tee "$ROOT/sif/ctcallr_1.0-${SHORT}.versions.txt"
+singularity exec --cleanenv --no-home "$SIF" bash -c 'echo "OS: $(. /etc/os-release; echo $PRETTY_NAME)"; circos -v | head -1; dpkg -s circos | grep ^Version' | tee -a "$ROOT/sif/ctcallr_1.0-${SHORT}.versions.txt"
+echo "[$(date -u +%FT%TZ)] build complete: $(ls -l "$SIF")"

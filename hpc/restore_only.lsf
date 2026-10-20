@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+#BSUB -q short
+#BSUB -P re_gecip_cancer_sarcoma
+#BSUB -J ctcallr_restore
+#BSUB -o logs/ctcallr_restore.%J.out
+#BSUB -e logs/ctcallr_restore.%J.err
+#BSUB -n 1
+#BSUB -R "rusage[mem=4000]"
+#BSUB -W 2:00
+# Restore the bundle from GitHub into DEST (default ./ctcallr):  mkdir -p logs; bsub -env "all,DEST=$PWD/ctcallr" < hpc/restore_only.lsf
+set -euo pipefail
+module load singularity/4.1.1 || true
+DEST="${DEST:-$(pwd)/ctcallr}"; OWNER="${OWNER:-Tim-Yu}"; mkdir -p logs
+[[ -f download_and_restore.sh ]] || wget -q "https://github.com/${OWNER}/ctcallr-offline/raw/refs/heads/main/restore/download_and_restore.sh" -O download_and_restore.sh
+bash download_and_restore.sh --owner "$OWNER" --dest "$DEST"

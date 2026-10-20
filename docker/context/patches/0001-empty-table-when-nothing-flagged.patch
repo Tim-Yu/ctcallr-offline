@@ -1,0 +1,32 @@
+diff -ruN a/R/CTCallR.R b/R/CTCallR.R
+--- a/R/CTCallR.R	2026-10-17 16:31:22.532003741 +0100
++++ b/R/CTCallR.R	2026-10-17 16:31:22.556004063 +0100
+@@ -76,6 +76,15 @@
+     ## ############################################
+     ## make table from flagged regions
+     tt <- deriveTable(allCPs)
++    ## bundle patch: nothing flagged -> write an empty table with the final column set and return it
++    if(nrow(tt)==0)
++    {
++        print("No high-density breakpoint region was flagged in any sample; writing an empty table")
++        empty <- as.data.frame(matrix(character(0), nrow=0, ncol=ncol(tt)+5,
++                                      dimnames=list(NULL, c(colnames(tt),"pRandomClass","pRandomOrder","expectedCov","nbSVs","Calls"))))
++        write.table(empty, file=outputfile, sep="\t", col.names=T, row.names=F, quote=F)
++        return(empty)
++    }
+     ## ############################################
+     ## ############################################
+     ## test regions for random SV classes/types; and random mate position order (not used)
+diff -ruN a/R/deriveTable.R b/R/deriveTable.R
+--- a/R/deriveTable.R	2026-10-17 16:31:22.532003741 +0100
++++ b/R/deriveTable.R	2026-10-17 16:31:22.548003956 +0100
+@@ -18,6 +18,9 @@
+             }
+         }
+     }
++    ## bundle patch: no flagged region in any sample -> return an empty table instead of failing on colnames<-
++    if(is.null(tt)) tt <- matrix(character(0), nrow=0, ncol=11)
++    if(is.null(dim(tt))) tt <- matrix(tt, nrow=1)
+     colnames(tt) <- c("samplename","start","end",
+                       "chrArm",
+                       "density",

@@ -1,0 +1,46 @@
+CTCallR offline bundle v1.0   packed 2026-10-20T14:08:51Z on pillay-lab-server
+CTCallR: https://github.com/galder-max/CTCallR  commit bb428d237dbc9b2b697da3dcc1a845e20701c469  (package version 1.0, 2023-09-14)
+Image: ctcallr_1.0-bb428d2.sif  bytes 443604992  sha256 0e31029588e04a8e29a06cb920512e50d60044408ef15d449334b23b412e67be  built with singularity version 3.8.4 from Docker image id sha256:4a2f606af56fc5c8795c2ae248b1245f74ac223563b4b837bb0be6d7fec97910  size 1171710990 B  created 2026-10-17T16:33:22.304314147+01:00
+Base image: rocker/r-ver:4.4.3 (Ubuntu 24.04, CRAN snapshot p3m 2025-04-10); Bioconductor 3.20; copynumber 1.40.0 from git.bioconductor.org RELEASE_3_17 (0c087dac); circos from Ubuntu (0.69.9+dfsg-2)
+Inside the image:
+  require() calls in CTCallR source: vcd, MASS, copynumber, parallel, EMT, GenomicRanges, RColorBrewer 
+  27 packages in the dependency closure (non-base):
+    CTCallR                1.0
+    vcd                    1.4-13
+    MASS                   7.3-64
+    copynumber             1.40.0
+    EMT                    1.3.1
+    GenomicRanges          1.58.0
+    IRanges                2.40.1
+    RColorBrewer           1.1-3
+    colorspace             2.1-1
+    lmtest                 0.9-40
+    zoo                    1.8-13
+    lattice                0.22-6
+    BiocGenerics           0.52.0
+    S4Vectors              0.44.0
+    GenomeInfoDb           1.42.3
+    XVector                0.46.0
+    UCSC.utils             1.2.0
+    GenomeInfoDbData       1.2.13
+    zlibbioc               1.52.0
+    httr                   1.4.7
+    jsonlite               2.0.0
+    curl                   6.2.2
+    mime                   0.13
+    openssl                2.3.2
+    R6                     2.6.1
+    askpass                1.2.1
+    sys                    3.4.3
+  circos: circos | v 0.69-8 | 15 Jun 2019 | Perl 5.038002 
+  R: R version 4.4.3 (2025-02-28) | BiocManager version: 3.20 
+  AUDIT OK
+  OS: Ubuntu 24.04.4 LTS
+  circos | v 0.69-8 | 15 Jun 2019 | Perl 5.038002
+  Version: 0.69.9+dfsg-2
+r-src: 30 source tarballs
+Bundle scripts:
+  ctcallr_exec.sh  sha256 4f322a3f36ca120221ee1c7a40c1dbfd7e7781c3bac411ec0870d79dbe634330
+  purple_to_ctcallr.R  sha256 ab304e221ed8582e538eb708af4ebe85c487d4d99e5dead809e438178a9a218c
+  run_ctcallr.sh  sha256 6e81f9916fb3a130d6b634f2c3e5101cabf7c969473ef5456265c7bb512e8c03
+  download_and_restore.sh  sha256 26c5f375d207006f70c4b5c5e658be6827b97ac163ddc8f8dbd1e59d67acd85a

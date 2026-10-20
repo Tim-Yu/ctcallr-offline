@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+#BSUB -q short
+#BSUB -P re_gecip_cancer_sarcoma
+#BSUB -J ctcallr
+#BSUB -o logs/ctcallr.%J.out
+#BSUB -e logs/ctcallr.%J.err
+#BSUB -R "span[hosts=1]"
+#BSUB -R "rusage[mem=16000]"
+#BSUB -n 8
+#BSUB -W 4:00
+#
+# CTCallR chromothripsis calling on a cohort table (all samples in the two TSVs are processed in one run).
+#   cd <restore dest> && mkdir -p logs
+#   bsub -env "all,CNA=/path/allCNAs.txt,SV=/path/allSVs.txt,OUTDIR=/path/out,GENOME=hg38" < hpc/submit_ctcallr_hpc.lsf
+# Variables: CNA, SV (required), OUTDIR (default ./runs/ctcallr_<jobid>), GENOME (hg19|hg38, default hg38), CORES (default LSB_DJOB_NUMPROC),
+#            EXTRA_ARGS (e.g. "--no-plot" or "--min-cna-bp 10")
+set -euo pipefail
+module load singularity/4.1.1
+CTCALLR_ROOT="${CTCALLR_ROOT:-$(pwd)}"
+# shellcheck disable=SC1091
+source "$CTCALLR_ROOT/env_controlled.sh"
+: "${CNA:?set CNA}"; : "${SV:?set SV}"
+OUTDIR="${OUTDIR:-$CTCALLR_ROOT/runs/ctcallr_${LSB_JOBID:-manual}}"; mkdir -p "$OUTDIR" logs
+# shellcheck disable=SC2206
+extra=(${EXTRA_ARGS:-})
+run_ctcallr.sh --cna "$CNA" --sv "$SV" --outdir "$OUTDIR" --genome "${GENOME:-hg38}" --cores "${CORES:-${LSB_DJOB_NUMPROC:-8}}" "${extra[@]}"
+echo "[$(date)] done -> $OUTDIR"
