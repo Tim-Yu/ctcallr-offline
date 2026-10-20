@@ -50,7 +50,19 @@ ctcallr_exec.sh --bind /path/purple:/purple:ro --bind $PWD:/work -- Rscript /ctc
 Conversion rules: major/minor allele copy numbers are rounded to integers, frac1_A = 1, chromosomes 1-22 and X kept
 (`--keep-y` adds Y), SVs = PASS breakend pairs of the PURPLE SV VCF (`--filters PASS,INFERRED` to widen), class from
 the VCF bracket notation of the lower breakend (`N[p[` del, `]p]N` td, `N]p]` h2h, `[p[N` t2t, inter-chromosomal tra).
-A cohort version is in `hpc/convert_purple_cohort.lsf`.
+### Whole cohort from the sample sheet (recommended)
+With the project sample sheet (header `PatientID TumourID Tumour_BAM Normal_BAM`, tab or comma separated) and the
+directory tree that holds the oncoanalyser output, one bsub script does everything:
+```bash
+cd /path/ctcallr                                                            # the restore destination
+bash hpc/ctcallr_cohort.lsf /path/sample_sheet.tsv /path/to/oncoanalyser_output [cohort_name]
+```
+It looks for `<TumourID>.purple.cnv.somatic.tsv` and `<TumourID>.purple.sv.vcf.gz` anywhere under that tree, prints
+which tumours have them, and submits itself as one job that converts all samples, runs CTCallR with `--genome hg38`
+and writes `runs/ctcallr_<cohort>/chromothripsis_annotated_calls_with_patient.txt` (calls table with PatientID joined
+in), the Circos PNGs, and `inputs/<cohort>_sample_map.tsv` (PURPLE files used; tumours without PURPLE output are
+skipped). If the PURPLE sample name differs from TumourID, add a `PurpleID` column to the sheet. Optional env before
+the command: `GENOME=hg19`, `EXTRA_ARGS="--min-cna-bp 10"`, `PURPLE_FILTERS=PASS,INFERRED`.
 
 ## Run
 ```bash

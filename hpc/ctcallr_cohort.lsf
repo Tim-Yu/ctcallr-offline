@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+#BSUB -q short
+#BSUB -P re_gecip_cancer_sarcoma
+#BSUB -J ctcallr_cohort
+#BSUB -o logs/ctcallr_cohort.%J.out
+#BSUB -e logs/ctcallr_cohort.%J.err
+#BSUB -R "rusage[mem=16000]"
+#BSUB -n 8
+#BSUB -W 4:00
+#
+# CTCallR on a whole cohort from the sample sheet (header: PatientID, TumourID, Tumour_BAM, Normal_BAM). ONE file:
+#   on the login node:  bash hpc/ctcallr_cohort.lsf /path/sample_sheet.tsv /path/to/oncoanalyser_output [cohort_name]
+#        -> for every TumourID looks for <TumourID>.purple.cnv.somatic.tsv and <TumourID>.purple.sv.vcf.gz anywhere
+#           under the oncoanalyser output tree, reports what was found, then submits THIS file as one LSF job
+#   inside LSF:         converts all found samples into the two CTCallR tables, runs CTCallR (hg38), joins PatientID
+# Output: <restore dest>/runs/ctcallr_<cohort>/chromothripsis_annotated_calls_with_patient.txt, Circos PNGs per
+#         flagged sample, inputs/<cohort>_sample_map.tsv (PURPLE files used; tumours without PURPLE output are skipped)
+# Add a PurpleID column to the sheet if the PURPLE sample name differs from TumourID.
+# Optional env at submission: GENOME (hg38), EXTRA_ARGS (e.g. "--min-cna-bp 10"), PURPLE_FILTERS (PASS)
+set -euo pipefail
+CTCALLR_ROOT="${CTCALLR_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+# shellcheck disable=SC1091
+source "$CTCALLR_ROOT/hpc/sheet_lib.sh"
+find_purple() { # $1 purple id -> prints "cnv<TAB>sv" (empty if not found)
+  local c s; c="$(find "$PURPLE_ROOT" -name "$1.purple.cnv.somatic.tsv" 2>/dev/null | head -1)"; s="$(find "$PURPLE_ROOT" -name "$1.purple.sv.vcf.gz" 2>/dev/null | head -1)"
+  [[ -n "$c" && -n "$s" ]] && printf '%s\t%s\n' "$c" "$s" || printf '\t\n'
+}
+
+if [[ -z "${LSB_JOBID:-}" ]]; then
+  # ---------------- submit mode ----------------
+  SHEET="${1:-${SHEET:-}}"; PURPLE_ROOT="${2:-${PURPLE_ROOT:-}}"; COHORT="${3:-${COHORT:-cohort}}"
+  [[ -n "$SHEET" && -f "$SHEET" && -n "$PURPLE_ROOT" && -d "$PURPLE_ROOT" ]] || { echo "usage: bash $0 /path/sample_sheet.tsv /path/to/oncoanalyser_output [cohort_name]" >&2; exit 1; }
+  SHEET="$(realpath "$SHEET")"; PURPLE_ROOT="$(realpath "$PURPLE_ROOT")"; mkdir -p "$CTCALLR_ROOT/logs"
+  echo "sheet: $SHEET ($(sheet_count "$SHEET") tumours); PURPLE search root: $PURPLE_ROOT"; found=0; miss=0
+  while IFS= read -r row; do
+    tid="$(sheet_field "$row" 1)"; pid="$(sheet_field "$row" 4)"; id="$(sheet_field "$row" 5)"; id="${id:-$tid}"
+    hit="$(find_purple "$id")"; c="$(sheet_field "$hit" 1)"
+    if [[ -n "$c" ]]; then found=$((found+1)); printf '  %-12s %-24s ok  %s\n' "$pid" "$tid" "$(dirname "$c")"; else miss=$((miss+1)); printf '  %-12s %-24s MISSING PURPLE output for id %s\n' "$pid" "$tid" "$id"; fi
+  done < <(sheet_rows "$SHEET")
+  echo "$found tumours with PURPLE output, $miss without (skipped by the job)"
+  [[ $found -gt 0 ]] || exit 1
+  cd "$CTCALLR_ROOT"; echo "submitting: bsub < $0"
+  bsub -env "all,SHEET=$SHEET,PURPLE_ROOT=$PURPLE_ROOT,COHORT=$COHORT,CTCALLR_ROOT=$CTCALLR_ROOT,GENOME=${GENOME:-hg38},EXTRA_ARGS=${EXTRA_ARGS:-},PURPLE_FILTERS=${PURPLE_FILTERS:-PASS}" < "${BASH_SOURCE[0]}"
+  exit 0
+fi
+
+# ---------------- run mode ----------------
+type module >/dev/null 2>&1 && module load singularity/4.1.1
+# shellcheck disable=SC1091
+source "$CTCALLR_ROOT/env_controlled.sh"
+: "${SHEET:?}"; : "${PURPLE_ROOT:?}"; COHORT="${COHORT:-cohort}"
+OUT="${OUTDIR:-$CTCALLR_ROOT/runs/ctcallr_${COHORT}}"; mkdir -p "$OUT/inputs"
+CNA="$OUT/inputs/${COHORT}_allCNAs.txt"; SV="$OUT/inputs/${COHORT}_allSVs.txt"; MAP="$OUT/inputs/${COHORT}_sample_map.tsv"
+rm -f "$CNA" "$SV"; printf 'TumourID\tPatientID\tPurpleID\tpurple_cnv\tpurple_sv\n' > "$MAP"; n=0; missing=()
+while IFS= read -r row; do
+  tid="$(sheet_field "$row" 1)"; pid="$(sheet_field "$row" 4)"; id="$(sheet_field "$row" 5)"; id="${id:-$tid}"
+  hit="$(find_purple "$id")"; cnv="$(sheet_field "$hit" 1)"; svf="$(sheet_field "$hit" 2)"
+  if [[ -z "$cnv" ]]; then missing+=("$tid"); printf '%s\t%s\t%s\tMISSING\tMISSING\n' "$tid" "$pid" "$id" >> "$MAP"; continue; fi
+  printf '%s\t%s\t%s\t%s\t%s\n' "$tid" "$pid" "$id" "$cnv" "$svf" >> "$MAP"
+  ctcallr_exec.sh --bind "$(dirname "$cnv"):/pc:ro" --bind "$(dirname "$svf"):/ps:ro" --bind "$OUT/inputs:/outp" -- \
+    Rscript /ctcallr_bin/purple_to_ctcallr.R --sample "$tid" --purple-cnv "/pc/$(basename "$cnv")" --purple-sv "/ps/$(basename "$svf")" \
+    --out-cna "/outp/$(basename "$CNA")" --out-sv "/outp/$(basename "$SV")" --append --filters "${PURPLE_FILTERS:-PASS}"
+  n=$((n+1))
+done < <(sheet_rows "$SHEET")
+echo "[$(date)] converted $n tumours; without PURPLE output: ${missing[*]:-none}  (see $MAP)"
+[[ $n -gt 0 ]] || { echo "no PURPLE output found under $PURPLE_ROOT"; exit 1; }
+# shellcheck disable=SC2206
+extra=(${EXTRA_ARGS:-})
+run_ctcallr.sh --cna "$CNA" --sv "$SV" --outdir "$OUT" --genome "${GENOME:-hg38}" --cores "${LSB_DJOB_NUMPROC:-8}" "${extra[@]}"
+T="$OUT/chromothripsis_annotated_calls.txt"
+awk -F'\t' -v OFS='\t' 'NR==FNR { pid[$1]=$4; next } FNR==1 { print "PatientID", $0; next } { print (($1 in pid) ? pid[$1] : "NA"), $0 }' \
+  <(sheet_rows "$SHEET") "$T" > "$OUT/chromothripsis_annotated_calls_with_patient.txt"
+echo "[$(date)] done -> $OUT/chromothripsis_annotated_calls_with_patient.txt ($(($(wc -l < "$T") - 1)) flagged regions)"

@@ -9,6 +9,8 @@ r-src/src/contrib/CTCallR_1.0.tar.gz
 r-src/src/contrib/copynumber_1.40.0.tar.gz
 r-src/INSTALL_OFFLINE.md
 hpc/submit_ctcallr_hpc.lsf
+hpc/ctcallr_cohort.lsf
+hpc/sheet_lib.sh
 restore/download_and_restore.sh
 upstream/CTCallR-bb428d2/CTCallR/DESCRIPTION
 docker/Dockerfile
