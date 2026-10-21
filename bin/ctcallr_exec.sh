@@ -18,7 +18,8 @@ done
 [[ -n "$SIF" ]] || SIF="$(ls -1 "$INSTALL_ROOT"/sif/*.sif 2>/dev/null | head -1 || true)"
 [[ -f "$SIF" ]] || { echo "ERROR: image not found; use --sif" >&2; exit 1; }
 [[ $# -gt 0 ]] || { echo "ERROR: no command given after --" >&2; exit 1; }
-cmd=(singularity exec --no-home --cleanenv --bind "$SCRIPT_DIR:/ctcallr_bin:ro" --bind "$PWD:/work")
-for b in "${BINDS[@]}"; do cmd+=(--bind "$b"); done
+cmd=(singularity exec --no-home --cleanenv --bind "$SCRIPT_DIR:/ctcallr_bin:ro")
+work_bound=0; for b in "${BINDS[@]}"; do [[ "$b" == *":/work"* ]] && work_bound=1; cmd+=(--bind "$b"); done
+[[ $work_bound -eq 1 ]] || cmd+=(--bind "$PWD:/work")     # default: current directory at /work unless the caller bound /work
 cmd+=(--pwd /work "$SIF" "$@")
 exec "${cmd[@]}"

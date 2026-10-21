@@ -15,15 +15,24 @@
 #   inside LSF:         converts all found samples into the two CTCallR tables, runs CTCallR (hg38), joins PatientID
 # Output: <restore dest>/runs/ctcallr_<cohort>/chromothripsis_annotated_calls_with_patient.txt, Circos PNGs per
 #         flagged sample, inputs/<cohort>_sample_map.tsv (PURPLE files used; tumours without PURPLE output are skipped)
-# Add a PurpleID column to the sheet if the PURPLE sample name differs from TumourID.
+# Copy number from Battenberg instead of PURPLE: BATTENBERG_ROOT=/path/to/battenberg_results (looks for <TumourID>_subclones.txt;
+#   SVs still come from the PURPLE SV VCF under the oncoanalyser output). Add a PurpleID column to the sheet if the
+#   PURPLE/Battenberg sample name differs from TumourID.
 # Optional env at submission: QUEUE (short), WALLTIME (4:00), GENOME (hg38), EXTRA_ARGS (e.g. "--min-cna-bp 10"), PURPLE_FILTERS (PASS);
 #   DRY_RUN=1 prints the bsub command instead of submitting.
 set -euo pipefail
 CTCALLR_ROOT="${CTCALLR_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 # shellcheck disable=SC1091
 source "$CTCALLR_ROOT/hpc/sheet_lib.sh"
-find_purple() { # $1 purple id -> prints "cnv<TAB>sv" (empty if not found)
-  local c s; c="$(find "$PURPLE_ROOT" -name "$1.purple.cnv.somatic.tsv" 2>/dev/null | head -1)"; s="$(find "$PURPLE_ROOT" -name "$1.purple.sv.vcf.gz" 2>/dev/null | head -1)"
+find_purple() { # $1 sample id -> prints "cn_file<TAB>sv_vcf" (empty fields if not found)
+  # copy number: Battenberg <id>_subclones.txt under BATTENBERG_ROOT when set, else PURPLE <id>.purple.cnv.somatic.tsv
+  local c s
+  if [[ -n "${BATTENBERG_ROOT:-}" ]]; then
+    # exact <id>_subclones.txt first, then <id>*_subclones.txt (e.g. <id>.redux.bam_subclones.txt); per-chromosome files excluded
+    c="$(find "$BATTENBERG_ROOT" -name "$1_subclones.txt" 2>/dev/null | head -1)"
+    [[ -n "$c" ]] || c="$(find "$BATTENBERG_ROOT" -name "$1*_subclones.txt" ! -name "*chr*_subclones.txt" 2>/dev/null | LC_ALL=C sort | head -1)"
+  else c="$(find "$PURPLE_ROOT" -name "$1.purple.cnv.somatic.tsv" 2>/dev/null | head -1)"; fi
+  s="$(find "$PURPLE_ROOT" -name "$1.purple.sv.vcf.gz" 2>/dev/null | head -1)"
   [[ -n "$c" && -n "$s" ]] && printf '%s\t%s\n' "$c" "$s" || printf '\t\n'
 }
 
@@ -32,17 +41,17 @@ if [[ -z "${LSB_JOBID:-}" ]]; then
   SHEET="${1:-${SHEET:-}}"; PURPLE_ROOT="${2:-${PURPLE_ROOT:-}}"; COHORT="${3:-${COHORT:-cohort}}"
   [[ -n "$SHEET" && -f "$SHEET" && -n "$PURPLE_ROOT" && -d "$PURPLE_ROOT" ]] || { echo "usage: bash $0 /path/sample_sheet.tsv /path/to/oncoanalyser_output [cohort_name]" >&2; exit 1; }
   SHEET="$(realpath "$SHEET")"; PURPLE_ROOT="$(realpath "$PURPLE_ROOT")"; mkdir -p "$CTCALLR_ROOT/logs"
-  echo "sheet: $SHEET ($(sheet_count "$SHEET") tumours); PURPLE search root: $PURPLE_ROOT"; found=0; miss=0
+  echo "sheet: $SHEET ($(sheet_count "$SHEET") tumours); SV source: PURPLE VCFs under $PURPLE_ROOT; copy number: ${BATTENBERG_ROOT:+Battenberg subclones under $BATTENBERG_ROOT}${BATTENBERG_ROOT:-PURPLE cnv.somatic.tsv}"; found=0; miss=0
   while IFS= read -r row; do
     tid="$(sheet_field "$row" 1)"; pid="$(sheet_field "$row" 4)"; id="$(sheet_field "$row" 5)"; id="${id:-$tid}"
     hit="$(find_purple "$id")"; c="$(sheet_field "$hit" 1)"
-    if [[ -n "$c" ]]; then found=$((found+1)); printf '  %-12s %-24s ok  %s\n' "$pid" "$tid" "$(dirname "$c")"; else miss=$((miss+1)); printf '  %-12s %-24s MISSING PURPLE output for id %s\n' "$pid" "$tid" "$id"; fi
+    if [[ -n "$c" ]]; then found=$((found+1)); printf '  %-12s %-24s ok  %s\n' "$pid" "$tid" "$(dirname "$c")"; else miss=$((miss+1)); printf '  %-12s %-24s MISSING copy-number file or SV VCF for id %s\n' "$pid" "$tid" "$id"; fi
   done < <(sheet_rows "$SHEET")
   echo "$found tumours with PURPLE output, $miss without (skipped by the job)"
   [[ $found -gt 0 ]] || exit 1
   cd "$CTCALLR_ROOT"
-  export SHEET PURPLE_ROOT COHORT CTCALLR_ROOT GENOME EXTRA_ARGS PURPLE_FILTERS
-  lsf_submit "${QUEUE:-short}" "${WALLTIME:-4:00}" "$(lsf_env SHEET PURPLE_ROOT COHORT CTCALLR_ROOT GENOME EXTRA_ARGS PURPLE_FILTERS)" "${BASH_SOURCE[0]}"
+  export SHEET PURPLE_ROOT BATTENBERG_ROOT COHORT CTCALLR_ROOT GENOME EXTRA_ARGS PURPLE_FILTERS
+  lsf_submit "${QUEUE:-short}" "${WALLTIME:-4:00}" "$(lsf_env SHEET PURPLE_ROOT BATTENBERG_ROOT COHORT CTCALLR_ROOT GENOME EXTRA_ARGS PURPLE_FILTERS)" "${BASH_SOURCE[0]}"
   exit 0
 fi
 
@@ -53,14 +62,15 @@ source "$CTCALLR_ROOT/env_controlled.sh"
 : "${SHEET:?}"; : "${PURPLE_ROOT:?}"; COHORT="${COHORT:-cohort}"
 OUT="${OUTDIR:-$CTCALLR_ROOT/runs/ctcallr_${COHORT}}"; mkdir -p "$OUT/inputs"
 CNA="$OUT/inputs/${COHORT}_allCNAs.txt"; SV="$OUT/inputs/${COHORT}_allSVs.txt"; MAP="$OUT/inputs/${COHORT}_sample_map.tsv"
-rm -f "$CNA" "$SV"; printf 'TumourID\tPatientID\tPurpleID\tpurple_cnv\tpurple_sv\n' > "$MAP"; n=0; missing=()
+rm -f "$CNA" "$SV"; printf 'TumourID\tPatientID\tSampleID\tcopy_number_file\tsv_vcf\n' > "$MAP"; n=0; missing=()
 while IFS= read -r row; do
   tid="$(sheet_field "$row" 1)"; pid="$(sheet_field "$row" 4)"; id="$(sheet_field "$row" 5)"; id="${id:-$tid}"
   hit="$(find_purple "$id")"; cnv="$(sheet_field "$hit" 1)"; svf="$(sheet_field "$hit" 2)"
   if [[ -z "$cnv" ]]; then missing+=("$tid"); printf '%s\t%s\t%s\tMISSING\tMISSING\n' "$tid" "$pid" "$id" >> "$MAP"; continue; fi
   printf '%s\t%s\t%s\t%s\t%s\n' "$tid" "$pid" "$id" "$cnv" "$svf" >> "$MAP"
+  if [[ -n "${BATTENBERG_ROOT:-}" ]]; then cnopt="--battenberg-subclones"; else cnopt="--purple-cnv"; fi
   ctcallr_exec.sh --bind "$(dirname "$cnv"):/pc:ro" --bind "$(dirname "$svf"):/ps:ro" --bind "$OUT/inputs:/outp" -- \
-    Rscript /ctcallr_bin/purple_to_ctcallr.R --sample "$tid" --purple-cnv "/pc/$(basename "$cnv")" --purple-sv "/ps/$(basename "$svf")" \
+    Rscript /ctcallr_bin/make_ctcallr_input.R --sample "$tid" $cnopt "/pc/$(basename "$cnv")" --sv-vcf "/ps/$(basename "$svf")" \
     --out-cna "/outp/$(basename "$CNA")" --out-sv "/outp/$(basename "$SV")" --append --filters "${PURPLE_FILTERS:-PASS}"
   n=$((n+1))
 done < <(sheet_rows "$SHEET")

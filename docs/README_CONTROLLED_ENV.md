@@ -74,6 +74,23 @@ skipped). If the PURPLE sample name differs from TumourID, add a `PurpleID` colu
 the command: `QUEUE=short WALLTIME=4:00` (defaults; a cohort run takes seconds to minutes), `GENOME=hg19`,
 `EXTRA_ARGS="--min-cna-bp 10"`, `PURPLE_FILTERS=PASS,INFERRED`, `DRY_RUN=1` (print the bsub command only).
 
+### Copy number from Battenberg instead of PURPLE
+CTCallR's copy-number table is the Battenberg `*_subclones.txt` layout (`chr startpos endpos nMaj1_A nMin1_A frac1_A`),
+so Battenberg output is the natural source (subclonal fractions are kept). SVs still come from a breakend VCF, normally
+the PURPLE SV VCF of the same tumour:
+```bash
+cd /path/ctcallr
+BATTENBERG_ROOT=/path/to/battenberg_results bash hpc/ctcallr_cohort.lsf /path/sample_sheet.tsv /path/to/oncoanalyser_output TERT_bb
+```
+The job looks for `<TumourID>_subclones.txt` under `BATTENBERG_ROOT` (and `<TumourID>.purple.sv.vcf.gz` under the
+oncoanalyser output as before); `inputs/<cohort>_sample_map.tsv` records which files were used. One sample by hand:
+```bash
+ctcallr_exec.sh --bind /path/bb:/bb:ro --bind /path/purple:/purple:ro --bind $PWD:/work -- Rscript /ctcallr_bin/make_ctcallr_input.R \
+   --sample S1 --battenberg-subclones /bb/S1_subclones.txt --sv-vcf /purple/S1.purple.sv.vcf.gz --out-cna /work/allCNAs.txt --out-sv /work/allSVs.txt --append
+```
+`make_ctcallr_input.R` takes `--battenberg-subclones` or `--purple-cnv` for copy number and `--sv-vcf` (any breakend
+VCF with MATEID: PURPLE, ESVEE, GRIDSS) for SVs; `purple_to_ctcallr.R` is kept as an alias of the PURPLE mode.
+
 ## Run
 ```bash
 run_ctcallr.sh --cna allCNAs.txt --sv allSVs.txt --outdir out --genome hg38 --cores 8          # GRCh38 data

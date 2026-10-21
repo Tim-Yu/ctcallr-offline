@@ -2,6 +2,7 @@ LICENSES/LICENSE-CTCallR-GPL-3.txt
 LICENSES/README.md
 README.md
 bin/ctcallr_exec.sh
+bin/make_ctcallr_input.R
 bin/purple_to_ctcallr.R
 bin/run_ctcallr.sh
 docker/01_build_image.sh

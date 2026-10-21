@@ -2,6 +2,7 @@ sif/ctcallr_1.0-bb428d2.sif
 bin/run_ctcallr.sh
 bin/ctcallr_exec.sh
 bin/purple_to_ctcallr.R
+bin/make_ctcallr_input.R
 example_input/allCNAs.txt
 example_input/allSVs.txt
 r-src/src/contrib/PACKAGES
