@@ -16,7 +16,8 @@
 # Output: <restore dest>/runs/ctcallr_<cohort>/chromothripsis_annotated_calls_with_patient.txt, Circos PNGs per
 #         flagged sample, inputs/<cohort>_sample_map.tsv (PURPLE files used; tumours without PURPLE output are skipped)
 # Add a PurpleID column to the sheet if the PURPLE sample name differs from TumourID.
-# Optional env at submission: GENOME (hg38), EXTRA_ARGS (e.g. "--min-cna-bp 10"), PURPLE_FILTERS (PASS)
+# Optional env at submission: QUEUE (short), WALLTIME (4:00), GENOME (hg38), EXTRA_ARGS (e.g. "--min-cna-bp 10"), PURPLE_FILTERS (PASS);
+#   DRY_RUN=1 prints the bsub command instead of submitting.
 set -euo pipefail
 CTCALLR_ROOT="${CTCALLR_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 # shellcheck disable=SC1091
@@ -39,8 +40,9 @@ if [[ -z "${LSB_JOBID:-}" ]]; then
   done < <(sheet_rows "$SHEET")
   echo "$found tumours with PURPLE output, $miss without (skipped by the job)"
   [[ $found -gt 0 ]] || exit 1
-  cd "$CTCALLR_ROOT"; echo "submitting: bsub < $0"
-  bsub -env "all,SHEET=$SHEET,PURPLE_ROOT=$PURPLE_ROOT,COHORT=$COHORT,CTCALLR_ROOT=$CTCALLR_ROOT,GENOME=${GENOME:-hg38},EXTRA_ARGS=${EXTRA_ARGS:-},PURPLE_FILTERS=${PURPLE_FILTERS:-PASS}" < "${BASH_SOURCE[0]}"
+  cd "$CTCALLR_ROOT"
+  export SHEET PURPLE_ROOT COHORT CTCALLR_ROOT GENOME EXTRA_ARGS PURPLE_FILTERS
+  lsf_submit "${QUEUE:-short}" "${WALLTIME:-4:00}" "$(lsf_env SHEET PURPLE_ROOT COHORT CTCALLR_ROOT GENOME EXTRA_ARGS PURPLE_FILTERS)" "${BASH_SOURCE[0]}"
   exit 0
 fi
 

@@ -71,7 +71,8 @@ which tumours have them, and submits itself as one job that converts all samples
 and writes `runs/ctcallr_<cohort>/chromothripsis_annotated_calls_with_patient.txt` (calls table with PatientID joined
 in), the Circos PNGs, and `inputs/<cohort>_sample_map.tsv` (PURPLE files used; tumours without PURPLE output are
 skipped). If the PURPLE sample name differs from TumourID, add a `PurpleID` column to the sheet. Optional env before
-the command: `GENOME=hg19`, `EXTRA_ARGS="--min-cna-bp 10"`, `PURPLE_FILTERS=PASS,INFERRED`.
+the command: `QUEUE=short WALLTIME=4:00` (defaults; a cohort run takes seconds to minutes), `GENOME=hg19`,
+`EXTRA_ARGS="--min-cna-bp 10"`, `PURPLE_FILTERS=PASS,INFERRED`, `DRY_RUN=1` (print the bsub command only).
 
 ## Run
 ```bash
