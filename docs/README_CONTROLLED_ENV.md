@@ -32,6 +32,15 @@ source ctcallr/env_controlled.sh
 run_ctcallr.sh --cna $CTCALLR_ROOT/example_input/allCNAs.txt --sv $CTCALLR_ROOT/example_input/allSVs.txt --outdir $CTCALLR_ROOT/smoke_test --cores 4
 ```
 
+## Updating an existing restore (scripts and docs only)
+```bash
+wget https://github.com/Tim-Yu/ctcallr-offline/raw/refs/heads/main/restore/update_bundle.sh
+bash update_bundle.sh --dest /path/to/restored/bundle          # add --dry-run to list what would change
+```
+Fetches the bootstrap file list (`FILES.txt`) and replaces only files whose checksum differs (bin/, hpc/, docs/,
+restore/, example data, licences, upstream source). The image, reference data and your runs are not touched. A new
+image or data version is announced by a new payload branch and needs a full `download_and_restore.sh`.
+
 ## Input format (TSV with header, columns in this order)
 | Table | Columns |
 | --- | --- |

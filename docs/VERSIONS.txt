@@ -1,4 +1,4 @@
-CTCallR offline bundle v1.0   packed 2026-10-20T20:13:26Z on pillay-lab-server
+CTCallR offline bundle v1.0   packed 2026-10-21T09:22:31Z on pillay-lab-server
 CTCallR: https://github.com/galder-max/CTCallR  commit bb428d237dbc9b2b697da3dcc1a845e20701c469  (package version 1.0, 2023-09-14)
 Image: ctcallr_1.0-bb428d2.sif  bytes 443604992  sha256 0e31029588e04a8e29a06cb920512e50d60044408ef15d449334b23b412e67be  built with singularity version 3.8.4 from Docker image id sha256:4a2f606af56fc5c8795c2ae248b1245f74ac223563b4b837bb0be6d7fec97910  size 1171710990 B  created 2026-10-17T16:33:22.304314147+01:00
 Base image: rocker/r-ver:4.4.3 (Ubuntu 24.04, CRAN snapshot p3m 2025-04-10); Bioconductor 3.20; copynumber 1.40.0 from git.bioconductor.org RELEASE_3_17 (0c087dac); circos from Ubuntu (0.69.9+dfsg-2)
