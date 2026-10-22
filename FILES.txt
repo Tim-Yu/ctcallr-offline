@@ -17,6 +17,7 @@ docs/VERSIONS.txt
 example_input/allCNAs.txt
 example_input/allSVs.txt
 hpc/ctcallr_cohort.lsf
+hpc/ctcallr_cohort_gel.lsf
 hpc/restore_only.lsf
 hpc/sample_sheet.example.tsv
 hpc/sheet_lib.sh

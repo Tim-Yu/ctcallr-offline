@@ -91,6 +91,24 @@ ctcallr_exec.sh --bind /path/bb:/bb:ro --bind /path/purple:/purple:ro --bind $PW
 `make_ctcallr_input.R` takes `--battenberg-subclones` or `--purple-cnv` for copy number and `--sv-vcf` (any breakend
 VCF with MATEID: PURPLE, ESVEE, GRIDSS) for SVs; `purple_to_ctcallr.R` is kept as an alias of the PURPLE mode.
 
+### GEL project layout: consensus SV BEDPE + fixed Battenberg tables (recommended for the TERT cohort)
+When each tumour already has consensus SV calls and a fixed Battenberg table in the project folders
+```
+<SV_ROOT>/<PatientID>/<TumourID>/<TumourID>.somatic.sv.bedpe              (default SV_ROOT=/re_gecip/cancer_sarcoma/19.ComplexSVs/19.5.SVs/19.5.7.ConsensusCalls/5_callers)
+<CN_ROOT>/P_<PatientID>_T_<TumourID>_N_<NormalID>/<TumourID>_copynumber_1.txt   (default CN_ROOT=/re_gecip/cancer_sarcoma/33.CN_Sigs/33.4.BB_fix/BB_merged)
+```
+one script locates both from the sample sheet (NormalID = Normal_BAM file name without `_final_dedup.bam`):
+```bash
+cd /path/ctcallr
+DRY_RUN=1 bash hpc/ctcallr_cohort_gel.lsf /path/sample_sheet.tsv TERT     # lists found/missing files, submits nothing
+bash hpc/ctcallr_cohort_gel.lsf /path/sample_sheet.tsv TERT               # submits one job: convert all, run CTCallR (hg38)
+```
+Override roots or file suffixes with env before the command, e.g. `CN_SUFFIX=_copynumber_1_gapfilled_LogR_new.txt`,
+`SV_ROOT=...`, `CN_ROOT=...`. Output: `runs/ctcallr_TERT/chromothripsis_annotated_calls_with_patient.txt`, Circos PNGs,
+`inputs/TERT_sample_map.tsv` (files used per tumour). SV classes come from the BEDPE `strand1`/`strand2` pair of the
+lower breakend (`+-` del, `-+` td, `++` h2h, `--` t2t; other chromosome -> tra); rows without strands fall back to
+`svclass` (INV without strands becomes `inv`, which CTCallR does not count as h2h/t2t).
+
 ## Run
 ```bash
 run_ctcallr.sh --cna allCNAs.txt --sv allSVs.txt --outdir out --genome hg38 --cores 8          # GRCh38 data

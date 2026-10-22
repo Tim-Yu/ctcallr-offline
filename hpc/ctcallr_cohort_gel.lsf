@@ -1,0 +1,90 @@
+#!/usr/bin/env bash
+#BSUB -q short
+#BSUB -P re_gecip_cancer_sarcoma
+#BSUB -J ctcallr_gel
+#BSUB -o logs/ctcallr_gel.%J.out
+#BSUB -e logs/ctcallr_gel.%J.err
+#BSUB -R "rusage[mem=16000]"
+#BSUB -n 8
+#BSUB -W 4:00
+#
+# CTCallR on a whole cohort using the GEL project layout, driven by the sample sheet (PatientID, TumourID, Tumour_BAM, Normal_BAM):
+#   SV  : <SV_ROOT>/<PatientID>/<TumourID>/<TumourID><SV_SUFFIX>                      consensus-call BEDPE (strand1/strand2/svclass columns)
+#   CN  : <CN_ROOT>/P_<PatientID>_T_<TumourID>_N_<NormalID>/<TumourID><CN_SUFFIX>       fixed Battenberg table (nMaj1_A/nMin1_A/frac1_A)
+#         NormalID = basename of Normal_BAM without _final_dedup.bam/.bam; if that folder is absent, P_<PatientID>_T_<TumourID>_N_* is tried
+# ONE file, two modes:
+#   login node:  bash hpc/ctcallr_cohort_gel.lsf /path/sample_sheet.tsv [cohort_name]   -> locates both files per tumour, prints
+#                found/missing, submits THIS file as one job
+#   inside LSF:  converts every tumour that has both files (make_ctcallr_input.R --battenberg-subclones --sv-bedpe), runs CTCallR
+#                (hg38), joins PatientID -> runs/ctcallr_<cohort>/chromothripsis_annotated_calls_with_patient.txt
+# Defaults (override with env before the command):
+#   SV_ROOT=/re_gecip/cancer_sarcoma/19.ComplexSVs/19.5.SVs/19.5.7.ConsensusCalls/5_callers   SV_SUFFIX=.somatic.sv.bedpe
+#   CN_ROOT=/re_gecip/cancer_sarcoma/33.CN_Sigs/33.4.BB_fix/BB_merged                          CN_SUFFIX=_copynumber_1.txt
+#     (e.g. CN_SUFFIX=_copynumber_1_gapfilled_LogR_new.txt for the gap-filled tables)
+#   GENOME=hg38  EXTRA_ARGS=""  QUEUE=short  WALLTIME=4:00  DRY_RUN=1 (print the bsub command only)
+set -euo pipefail
+CTCALLR_ROOT="${CTCALLR_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+# shellcheck disable=SC1091
+source "$CTCALLR_ROOT/hpc/sheet_lib.sh"
+SV_ROOT="${SV_ROOT:-/re_gecip/cancer_sarcoma/19.ComplexSVs/19.5.SVs/19.5.7.ConsensusCalls/5_callers}"
+CN_ROOT="${CN_ROOT:-/re_gecip/cancer_sarcoma/33.CN_Sigs/33.4.BB_fix/BB_merged}"
+SV_SUFFIX="${SV_SUFFIX:-.somatic.sv.bedpe}"; CN_SUFFIX="${CN_SUFFIX:-_copynumber_1.txt}"
+normal_id() { local b; b="$(basename "$1")"; b="${b%_final_dedup.bam}"; b="${b%.bam}"; printf '%s' "$b"; }
+locate() { # $1 patient $2 tumour $3 normal_id -> prints "cn_file<TAB>sv_file" (empty fields when not found)
+  local sv cn dir
+  sv="$SV_ROOT/$1/$2/$2$SV_SUFFIX"; [[ -f "$sv" ]] || sv=""
+  dir="$CN_ROOT/P_$1_T_$2_N_$3"
+  if [[ ! -d "$dir" ]]; then dir="$(ls -d "$CN_ROOT/P_$1_T_$2_N_"* 2>/dev/null | head -1 || true)"; fi
+  cn=""; [[ -n "$dir" && -f "$dir/$2$CN_SUFFIX" ]] && cn="$dir/$2$CN_SUFFIX"
+  printf '%s\t%s\n' "$cn" "$sv"
+}
+
+if [[ -z "${LSB_JOBID:-}" ]]; then
+  # ---------------- submit mode ----------------
+  SHEET="${1:-${SHEET:-}}"; COHORT="${2:-${COHORT:-gel}}"
+  [[ -n "$SHEET" && -f "$SHEET" ]] || { echo "usage: bash $0 /path/sample_sheet.tsv [cohort_name]" >&2; exit 1; }
+  SHEET="$(realpath "$SHEET")"; mkdir -p "$CTCALLR_ROOT/logs"
+  echo "sheet: $SHEET ($(sheet_count "$SHEET") tumours)"; echo "SV : $SV_ROOT/<PatientID>/<TumourID>/<TumourID>$SV_SUFFIX"; echo "CN : $CN_ROOT/P_<PatientID>_T_<TumourID>_N_<NormalID>/<TumourID>$CN_SUFFIX"
+  found=0; miss=0
+  while IFS= read -r row; do
+    tid="$(sheet_field "$row" 1)"; nbam="$(sheet_field "$row" 3)"; pid="$(sheet_field "$row" 4)"; nid="$(normal_id "$nbam")"
+    hit="$(locate "$pid" "$tid" "$nid")"; cn="$(sheet_field "$hit" 1)"; sv="$(sheet_field "$hit" 2)"
+    if [[ -n "$cn" && -n "$sv" ]]; then found=$((found+1)); printf '  %-10s %-22s ok   CN=%s  SV=%s\n' "$pid" "$tid" "$(basename "$(dirname "$cn")")/$(basename "$cn")" "$(basename "$sv")"
+    else miss=$((miss+1)); what=""; [[ -z "$cn" ]] && what+="CN: P_${pid}_T_${tid}_N_${nid}/${tid}${CN_SUFFIX} "; [[ -z "$sv" ]] && what+="SV: ${pid}/${tid}/${tid}${SV_SUFFIX}"
+         printf '  %-10s %-22s MISSING %s\n' "$pid" "$tid" "$what"; fi
+  done < <(sheet_rows "$SHEET")
+  echo "$found tumours with both files, $miss without (skipped by the job)"
+  [[ $found -gt 0 ]] || exit 1
+  cd "$CTCALLR_ROOT"
+  export SHEET COHORT CTCALLR_ROOT SV_ROOT CN_ROOT SV_SUFFIX CN_SUFFIX GENOME EXTRA_ARGS
+  lsf_submit "${QUEUE:-short}" "${WALLTIME:-4:00}" "$(lsf_env SHEET COHORT CTCALLR_ROOT SV_ROOT CN_ROOT SV_SUFFIX CN_SUFFIX GENOME EXTRA_ARGS)" "${BASH_SOURCE[0]}"
+  exit 0
+fi
+
+# ---------------- run mode ----------------
+type module >/dev/null 2>&1 && module load singularity/4.1.1
+# shellcheck disable=SC1091
+source "$CTCALLR_ROOT/env_controlled.sh"
+: "${SHEET:?}"; COHORT="${COHORT:-gel}"
+OUT="${OUTDIR:-$CTCALLR_ROOT/runs/ctcallr_${COHORT}}"; mkdir -p "$OUT/inputs"
+CNA="$OUT/inputs/${COHORT}_allCNAs.txt"; SV="$OUT/inputs/${COHORT}_allSVs.txt"; MAP="$OUT/inputs/${COHORT}_sample_map.tsv"
+rm -f "$CNA" "$SV"; printf 'TumourID\tPatientID\tNormalID\tcopy_number_file\tsv_file\n' > "$MAP"; n=0; missing=()
+while IFS= read -r row; do
+  tid="$(sheet_field "$row" 1)"; nbam="$(sheet_field "$row" 3)"; pid="$(sheet_field "$row" 4)"; nid="$(normal_id "$nbam")"
+  hit="$(locate "$pid" "$tid" "$nid")"; cn="$(sheet_field "$hit" 1)"; sv="$(sheet_field "$hit" 2)"
+  if [[ -z "$cn" || -z "$sv" ]]; then missing+=("$tid"); printf '%s\t%s\t%s\t%s\t%s\n' "$tid" "$pid" "$nid" "${cn:-MISSING}" "${sv:-MISSING}" >> "$MAP"; continue; fi
+  printf '%s\t%s\t%s\t%s\t%s\n' "$tid" "$pid" "$nid" "$cn" "$sv" >> "$MAP"
+  ctcallr_exec.sh --bind "$(dirname "$cn"):/cn:ro" --bind "$(dirname "$sv"):/sv:ro" --bind "$OUT/inputs:/outp" -- \
+    Rscript /ctcallr_bin/make_ctcallr_input.R --sample "$tid" --battenberg-subclones "/cn/$(basename "$cn")" --sv-bedpe "/sv/$(basename "$sv")" \
+    --out-cna "/outp/$(basename "$CNA")" --out-sv "/outp/$(basename "$SV")" --append
+  n=$((n+1))
+done < <(sheet_rows "$SHEET")
+echo "[$(date)] converted $n tumours; skipped (file missing): ${missing[*]:-none}  (see $MAP)"
+[[ $n -gt 0 ]] || { echo "no tumour had both files"; exit 1; }
+# shellcheck disable=SC2206
+extra=(${EXTRA_ARGS:-})
+run_ctcallr.sh --cna "$CNA" --sv "$SV" --outdir "$OUT" --genome "${GENOME:-hg38}" --cores "${LSB_DJOB_NUMPROC:-8}" "${extra[@]}"
+T="$OUT/chromothripsis_annotated_calls.txt"
+awk -F'\t' -v OFS='\t' 'NR==FNR { pid[$1]=$4; next } FNR==1 { print "PatientID", $0; next } { print (($1 in pid) ? pid[$1] : "NA"), $0 }' \
+  <(sheet_rows "$SHEET") "$T" > "$OUT/chromothripsis_annotated_calls_with_patient.txt"
+echo "[$(date)] done -> $OUT/chromothripsis_annotated_calls_with_patient.txt ($(($(wc -l < "$T") - 1)) flagged regions)"

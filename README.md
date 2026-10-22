@@ -17,7 +17,7 @@ Full guide: [`docs/README_CONTROLLED_ENV.md`](docs/README_CONTROLLED_ENV.md).
 | --- | --- |
 | `restore/download_and_restore.sh` | bash-only downloader / verifier / extractor (resumable) |
 | `bin/` | `run_ctcallr.sh`, `ctcallr_exec.sh`, `purple_to_ctcallr.R` |
-| `hpc/` | LSF templates: `ctcallr_cohort.lsf` (self-submitting: whole cohort from the sample sheet + oncoanalyser output), `submit_ctcallr_hpc.lsf`, `restore_only.lsf` |
+| `hpc/` | LSF templates: `ctcallr_cohort_gel.lsf` (GEL layout: consensus BEDPE + fixed Battenberg, from the sample sheet), `ctcallr_cohort.lsf` (PURPLE/Battenberg + PURPLE SV VCF), `submit_ctcallr_hpc.lsf`, `restore_only.lsf` |
 | `example_input/` | upstream 3-sarcoma example data |
 | `docker/` | Dockerfile and scripts that built the image (`rocker/r-ver:4.4.3` + Ubuntu `circos` + Bioconductor 3.20 + copynumber 1.40.0 from Bioconductor git) |
 | `manifests/v1.0/` | MANIFEST.tsv, CHECKSUMS.sha256, ARCHIVES.tsv, ARCHIVES.sha256, REQUIRED_FILES.txt, VERSIONS.txt |
