@@ -26,10 +26,20 @@ mkdir -p "$WORK_DIR"; WORK_DIR="$(cd "$WORK_DIR" && pwd)"; LOG="$WORK_DIR/restor
 log() { echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] $*" | tee -a "$LOG"; }; die() { log "ERROR: $*"; exit 1; }
 for cmd in sha256sum tar awk sort cat; do command -v "$cmd" >/dev/null 2>&1 || die "missing command: $cmd"; done
 if command -v wget >/dev/null 2>&1; then DL=wget; elif command -v curl >/dev/null 2>&1; then DL=curl; else die "need wget or curl"; fi
-fetch() { local url="$1" dest="$2" try=1; while (( try <= RETRIES )); do
-    if [[ $DL == wget ]]; then wget -q -c -O "$dest.part" "$url" && mv -f "$dest.part" "$dest" && return 0
-    else curl -fsSL --retry 3 -C - -o "$dest.part" "$url" && mv -f "$dest.part" "$dest" && return 0; fi
-    log "  retry $try/$RETRIES for $(basename "$dest")"; sleep $((try*3)); try=$((try+1)); done; return 1; }
+alt_url() { # github.com/raw  <->  raw.githubusercontent.com (the redirect target); the same file on the other host
+  case "$1" in
+    https://github.com/*/raw/refs/heads/*) printf '%s' "$1" | sed -E 's#^https://github.com/([^/]+)/([^/]+)/raw/refs/heads/#https://raw.githubusercontent.com/\1/\2/#' ;;
+    https://raw.githubusercontent.com/*) printf '%s' "$1" | sed -E 's#^https://raw.githubusercontent.com/([^/]+)/([^/]+)/([^/]+)/#https://github.com/\1/\2/raw/refs/heads/\3/#' ;;
+    *) printf '%s' "$1" ;;
+  esac
+}
+fetch() { local url="$1" dest="$2" try=1 u; while (( try <= RETRIES )); do
+    for u in "$url" "$(alt_url "$url")"; do
+      if [[ $DL == wget ]]; then wget -q -c -O "$dest.part" "$u" && mv -f "$dest.part" "$dest" && return 0
+      else curl -fsSL -C - -o "$dest.part" "$u" && mv -f "$dest.part" "$dest" && return 0; fi
+    done
+    (( try < RETRIES )) && { log "  retry $try/$RETRIES for $(basename "$dest") in $((10 * (1 << (try - 1)))) s (GitHub 403/429 = shared address throttled)"; sleep $((10 * (1 << (try - 1)))); }
+    try=$((try+1)); done; return 1; }
 sha_ok() { [[ "$(sha256sum "$1" | awk '{print $1}')" == "$2" ]]; }
 BASE="${BASE_URL:-https://github.com/${OWNER}/${REPO}/raw/refs/heads/${BRANCH}}/${PACKAGE_PATH}"
 PDIR="$WORK_DIR/$(basename "$PACKAGE_PATH")"; mkdir -p "$PDIR"; cd "$PDIR"
@@ -41,8 +51,13 @@ total="$(awk -F'\t' 'NR>1 && $1!=""' MANIFEST.tsv | wc -l)"; done_n=0; fetched=0
 while IFS=$'\t' read -r fname ftype fbytes fsha; do
   [[ -z "$fname" || "$fname" == "file" ]] && continue
   if [[ -f "$fname" && "$(stat -c %s "$fname")" == "$fbytes" && ( -f ".ok.$fname" || $(sha_ok "$fname" "$fsha" && echo 1) == 1 ) ]]; then touch ".ok.$fname"; done_n=$((done_n+1)); continue; fi
-  rm -f "$fname" ".ok.$fname"; fetch "$BASE/$fname" "$fname" || die "download failed: $fname"
-  sha_ok "$fname" "$fsha" || { rm -f "$fname"; fetch "$BASE/$fname" "$fname" && sha_ok "$fname" "$fsha" || die "checksum mismatch: $fname"; }
+  rm -f "$fname" ".ok.$fname"; ok=0
+  for attempt in $(seq 1 "${MISMATCH_RETRIES:-6}"); do
+    fetch "$BASE/$fname" "$fname" || die "download failed: $fname"
+    sha_ok "$fname" "$fsha" && { ok=1; break; }
+    rm -f "$fname"; log "  checksum mismatch for $fname (GitHub's CDN still serving an older copy?); retry $attempt in ${MISMATCH_WAIT:-60} s"; sleep "${MISMATCH_WAIT:-60}"
+  done
+  [[ $ok -eq 1 ]] || die "checksum mismatch persists for $fname: rerun later (the script resumes) or check MANIFEST.tsv vs the published file"
   touch ".ok.$fname"; fetched=$((fetched+1)); done_n=$((done_n+1)); printf '\r   %d/%d files' "$done_n" "$total"
 done < MANIFEST.tsv
 echo; log "   parts verified: $done_n ($fetched downloaded)"
